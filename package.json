@@ -14,6 +14,7 @@
     "test": "vitest run",
     "eval": "tsx eval/run-eval.ts",
     "demo": "tsx scripts/demo-conversation.ts",
+    "simulate": "tsx scripts/simulate-conversation.ts",
     "start:env": "tsx --env-file=.env src/index.ts"
   },
   "devDependencies": {

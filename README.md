@@ -139,8 +139,23 @@ webhook at `https://<host>/twilio/webhook` (POST). The bot answers with empty Tw
 listed in `APPROVED_TEMPLATES`.
 
 The adapter is tested against a local mock of the Messages API, and the signature code is checked against the worked
-example in Twilio's security docs. **It has not been run against live Twilio yet.**
-[`scripts/live-twilio-check.md`](scripts/live-twilio-check.md) lists the Sandbox steps and the four manual checks.
+example in Twilio's security docs. See **Live test status** below for what has and has not been verified against real Twilio.
+[`scripts/live-twilio-check.md`](scripts/live-twilio-check.md) lists the Sandbox steps and manual checks.
+
+### Live test status
+
+- **Verified against real Twilio:** the bot ran with `PROVIDER=twilio` behind a public HTTPS tunnel. A correctly signed
+  Twilio-style POST to the public `/twilio/webhook` URL got **200** (empty TwiML) and the bot logic ran; a request with an
+  invalid `X-Twilio-Signature` got **403**. The bot's outbound call to the real Messages API was authenticated by Twilio
+  (the credentials were accepted).
+- **Not run:** a full phone round-trip (real WhatsApp message in, bot reply out). The account used is a Twilio trial:
+  trial accounts block configuring the inbound webhook for the WhatsApp sender (the Senders API returns 401 "not available
+  on a Trial account" and the Sandbox settings page requires an upgrade), and sending to unverified recipients is rejected
+  with **422** ("No Twilio trial phone number is assigned… add the 'to' number as a verified recipient").
+- **Simulated sender:** `npm run simulate` sends signed fake Twilio webhooks to a local bot with a mock Messages API (no
+  real Twilio calls) and prints the conversation. The screenshot below is rendered from that real output:
+
+![Simulated conversation](screenshots/simulated-conversation.png)
 
 ## Using a real LLM
 
@@ -180,8 +195,8 @@ knowledge/      fictional clinic knowledge base (Hebrew + English)
 tests/          vitest: unit, integration (mock Graph API), n8n workflow
 eval/           held-out evaluation cases and runner
 n8n/            workflow JSON, its Code-node sources, import guide
-scripts/        sample conversation used for the screenshot
-screenshots/    real terminal renders of the test run and demo
+scripts/        sample conversation, simulated Twilio sender, transcript renderer, live-check notes
+screenshots/    real renders of the test run, demo and simulated conversation
 ```
 
 ## Limitations
