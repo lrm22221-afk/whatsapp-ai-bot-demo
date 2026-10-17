@@ -1,4 +1,10 @@
-import type { GraphClient, SendResult } from "./graph.js";
+import type { SendResult } from "./graph.js";
+
+/** What the bot needs from a WhatsApp provider (Meta Cloud API or Twilio). */
+export interface Outbound {
+  sendText(to: string, body: string): Promise<SendResult>;
+  sendTemplate(to: string, name: string, languageCode: string): Promise<SendResult>;
+}
 import type { Session } from "./store.js";
 
 export const WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -10,7 +16,7 @@ export type Outcome = SendResult | { ok: false; status: 0; error: string; blocke
  * customer's last message; outside it, only pre-approved templates. Never messages opted-out users.
  */
 export class Messenger {
-  constructor(private graph: GraphClient, private approvedTemplates: string[], private now: () => number = Date.now) {}
+  constructor(private graph: Outbound, private approvedTemplates: string[], private now: () => number = Date.now) {}
 
   insideWindow(s: Session): boolean { return s.lastInboundAt > 0 && this.now() - s.lastInboundAt < WINDOW_MS; }
 

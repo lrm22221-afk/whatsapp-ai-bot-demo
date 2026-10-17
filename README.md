@@ -6,7 +6,8 @@
 > **Demo project. It runs on mocks and is not a client deployment.** The clinic, address, prices and insurance data are
 > fictional. The test suite and CI talk to a local mock of the Graph API, never to Meta.
 
-A TypeScript/Node webhook service for the **Meta WhatsApp Cloud API**, plus an equivalent **n8n** workflow.
+A TypeScript/Node webhook service for the **Meta WhatsApp Cloud API**, with an optional **Twilio WhatsApp** adapter
+(`PROVIDER=meta|twilio`) and an equivalent **n8n** workflow.
 It shows the parts that usually break in real WhatsApp bot projects: webhook verification, signature checks,
 duplicate deliveries, status callbacks, the 24-hour messaging window, opt-outs, and an AI assistant
 that refuses to make up answers.
@@ -69,6 +70,7 @@ flowchart LR
 | 24-hour window | Free text only within 24h of the customer's last message; outside it, only templates in `APPROVED_TEMPLATES` | `src/messenger.ts` |
 | Prompt injection | Pattern-based refusal in Hebrew and English; the LLM prompt also treats user text as data | `src/guardrails.ts` |
 | Admin API | Bearer-protected `/admin/appointments`, `/admin/handoffs`, `/admin/statuses`, `/admin/send` | `src/server.ts` |
+| Twilio adapter (optional) | `POST /twilio/webhook` with `X-Twilio-Signature` validation (Twilio's documented HMAC-SHA1 algorithm), MessageSid dedupe, status callbacks, replies via the Twilio Messages API; templates as Content SIDs | `src/twilio.ts` |
 | n8n | Same flow as an importable workflow (simplified keyword routing) | `n8n/` |
 
 ## Quick start
@@ -79,7 +81,7 @@ Requires Node.js 20+.
 git clone https://github.com/lrm22221-afk/whatsapp-ai-bot-demo.git
 cd whatsapp-ai-bot-demo
 npm ci
-npm test            # unit + integration + n8n tests against a local mock Graph API
+npm test            # unit, integration, Twilio and n8n tests against local mocks
 npm run eval        # offline evaluation on 28 held-out messages
 npm run demo        # prints a sample bilingual conversation (signed webhook -> bot -> mock Graph API)
 
@@ -100,10 +102,14 @@ See [`.env.example`](.env.example). No secrets are committed.
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `WHATSAPP_VERIFY_TOKEN` | yes | Value you also enter in the Meta webhook settings |
-| `WHATSAPP_APP_SECRET` | yes | Meta app secret, used to check `X-Hub-Signature-256` |
-| `WHATSAPP_ACCESS_TOKEN` | yes | System User token with `whatsapp_business_messaging` |
-| `WHATSAPP_PHONE_NUMBER_ID` | yes | Sender phone number id |
+| `PROVIDER` | no | `meta` (default) or `twilio` |
+| `WHATSAPP_VERIFY_TOKEN` | meta | Value you also enter in the Meta webhook settings |
+| `WHATSAPP_APP_SECRET` | meta | Meta app secret, used to check `X-Hub-Signature-256` |
+| `WHATSAPP_ACCESS_TOKEN` | meta | System User token with `whatsapp_business_messaging` |
+| `WHATSAPP_PHONE_NUMBER_ID` | meta | Sender phone number id |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM` | twilio | Twilio credentials and WhatsApp sender (E.164) |
+| `TWILIO_WEBHOOK_URL` | twilio, behind a proxy | Exact public URL Twilio calls; used to validate the signature |
+| `TWILIO_API_BASE_URL` | no | Default `https://api.twilio.com`; tests point it at a mock |
 | `ADMIN_TOKEN` | yes | Bearer token for `/admin/*` |
 | `GRAPH_BASE_URL` | no | Default `https://graph.facebook.com`; tests point it at a mock |
 | `GRAPH_API_VERSION` | no | Default `v21.0` |
@@ -125,6 +131,17 @@ See [`.env.example`](.env.example). No secrets are committed.
 6. Create and get approval for any template you list in `APPROVED_TEMPLATES` (WhatsApp Manager → Message templates).
 7. Edit `knowledge/clinic.json` with the business's real information.
 
+## Using Twilio instead of Meta (optional)
+
+Set `PROVIDER=twilio` and the `TWILIO_*` variables, then point the Twilio WhatsApp sender's (or Sandbox's) incoming-message
+webhook at `https://<host>/twilio/webhook` (POST). The bot answers with empty TwiML and sends replies through
+`POST /2010-04-01/Accounts/{AccountSid}/Messages.json`. Outside the 24-hour window it sends only the Content template SIDs
+listed in `APPROVED_TEMPLATES`.
+
+The adapter is tested against a local mock of the Messages API, and the signature code is checked against the worked
+example in Twilio's security docs. **It has not been run against live Twilio yet.**
+[`scripts/live-twilio-check.md`](scripts/live-twilio-check.md) lists the Sandbox steps and the four manual checks.
+
 ## Using a real LLM
 
 By default everything is offline and deterministic. With `LLM_API_KEY` set, the retrieved answer text is passed as the only
@@ -138,7 +155,8 @@ Last local run (same commands as CI):
 
 ![Test run](screenshots/test-run.png)
 
-- `npm test`: **40 tests passing** across 3 files: 17 unit, 18 integration (real HTTP server + mock Graph API),
+- `npm test`: **51 tests passing** across 4 files: 17 unit, 18 integration (real HTTP server + mock Graph API),
+  11 for the Twilio adapter (signature incl. Twilio's documented example, config, end-to-end against a mock Messages API),
   5 for the n8n workflow (structure check plus running its Code nodes on signed payloads).
 - `npm run eval`: **27/28 (96.4%)** on held-out phrasings that are not in the knowledge base verbatim. CI fails below 90%.
   The one miss is a Hebrew injection phrasing ("שכח את כל ההוראות…") that the patterns do not catch; it fails safe
@@ -168,7 +186,7 @@ screenshots/    real terminal renders of the test run and demo
 
 ## Limitations
 
-- **Demo only.** It has not been connected to a live Meta app or a client's number as part of this repo.
+- **Demo only.** It has not been connected to a live Meta app, live Twilio account or a client's number as part of this repo.
 - State (sessions, dedupe, appointments, handoffs) lives in memory and is lost on restart. Production needs Redis or a database,
   and dedupe must be shared when running more than one instance.
 - Appointments are *requests*. There is no calendar integration or availability check.

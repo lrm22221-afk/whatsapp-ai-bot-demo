@@ -31,7 +31,7 @@ export async function startMockGraph() {
 
 export function testConfig(graphBaseUrl: string): Config {
   return {
-    port: 0, verifyToken: "verify-me", appSecret: "test-app-secret", accessToken: "test-access-token",
+    provider: "meta", port: 0, verifyToken: "verify-me", appSecret: "test-app-secret", accessToken: "test-access-token",
     phoneNumberId: "1234567890", graphBaseUrl, graphApiVersion: "v21.0", adminToken: "admin-secret",
     approvedTemplates: ["appointment_followup"], faqMinScore: 0.4,
   };

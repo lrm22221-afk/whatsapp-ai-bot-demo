@@ -3,7 +3,8 @@ import type { Config } from "./config.js";
 import { verifySignature } from "./signature.js";
 import { Deduper } from "./dedupe.js";
 import { GraphClient } from "./graph.js";
-import { Messenger } from "./messenger.js";
+import { Messenger, type Outbound } from "./messenger.js";
+import { TwilioClient, verifyTwilioSignature } from "./twilio.js";
 import { Assistant } from "./assistant.js";
 import { Store } from "./store.js";
 import { detectLanguage } from "./lang.js";
@@ -21,28 +22,34 @@ export function createApp({ cfg, retriever, generator, now = Date.now, log = () 
   const store = new Store();
   const deduper = new Deduper(24 * 60 * 60 * 1000, now);
   const graph = new GraphClient(cfg);
-  const messenger = new Messenger(graph, cfg.approvedTemplates, now);
+  const twilio = cfg.provider === "twilio" && cfg.twilio ? new TwilioClient(cfg.twilio) : undefined;
+  const outbound: Outbound = twilio ?? graph;
+  const messenger = new Messenger(outbound, cfg.approvedTemplates, now);
   const assistant = new Assistant(store, retriever, generator, cfg.faqMinScore, () => new Date(now()));
   const pending = new Set<Promise<void>>();
 
   const track = (p: Promise<void>) => { pending.add(p); p.finally(() => pending.delete(p)); };
 
   async function processMessage(msg: any, contactName?: string): Promise<void> {
-    const phone: string = msg.from;
     const text: string | undefined =
       msg.type === "text" ? msg.text?.body
       : msg.type === "interactive" ? (msg.interactive?.button_reply?.title ?? msg.interactive?.list_reply?.title)
       : msg.type === "button" ? msg.button?.text : undefined;
-    const session = store.session(phone, detectLanguage(text ?? "", "he"));
-    // The 24h window is anchored on the customer's own message timestamp (seconds since epoch).
-    session.lastInboundAt = Math.max(session.lastInboundAt, Number(msg.timestamp) * 1000 || now());
     await graph.markRead(msg.id);
+    // The 24h window is anchored on the customer's own message timestamp (seconds since epoch).
+    await processInbound(msg.from, text, Number(msg.timestamp) * 1000 || now(), contactName);
+  }
+
+  /** Provider-independent handling of one inbound customer message. */
+  async function processInbound(phone: string, text: string | undefined, receivedAt: number, contactName?: string): Promise<void> {
+    const session = store.session(phone, detectLanguage(text ?? "", "he"));
+    session.lastInboundAt = Math.max(session.lastInboundAt, receivedAt);
     if (!text) { if (!session.optedOut) await messenger.text(session, UNSUPPORTED[session.lang]); return; }
     const reply = await assistant.handle(session, text);
     log("message", { from: phone, name: contactName, intent: reply.intent });
     if (reply.text) {
       // Opt-out confirmation is the one message we still send to a user who just opted out.
-      const r = reply.intent === "opt_out" ? await graph.sendText(phone, reply.text) : await messenger.text(session, reply.text);
+      const r = reply.intent === "opt_out" ? await outbound.sendText(phone, reply.text) : await messenger.text(session, reply.text);
       if (!r.ok) log("send failed", r);
     }
   }
@@ -84,6 +91,26 @@ export function createApp({ cfg, retriever, generator, now = Date.now, log = () 
       try { body = JSON.parse(raw.toString("utf8")); } catch { return send(400, { error: "invalid json" }); }
       handleWebhook(body);
       return send(200, { received: true }); // acknowledge fast; replies are sent asynchronously
+    }
+
+    if (url.pathname === "/twilio/webhook" && req.method === "POST" && twilio && cfg.twilio) {
+      const params = Object.fromEntries(new URLSearchParams(raw.toString("utf8")));
+      // Twilio signs the public URL it called; behind a tunnel/proxy set TWILIO_WEBHOOK_URL to that exact URL.
+      const publicUrl = cfg.twilio.webhookUrl ??
+        `${(req.headers["x-forwarded-proto"] as string) ?? "http"}://${(req.headers["x-forwarded-host"] as string) ?? req.headers.host}${req.url}`;
+      if (!verifyTwilioSignature(publicUrl, params, req.headers["x-twilio-signature"] as string | undefined, cfg.twilio.authToken))
+        return send(403, { error: "invalid Twilio signature" });
+      if (params.MessageStatus && !params.Body && !params.NumMedia) {
+        // Status callback (queued/sent/delivered/read/failed/undelivered)
+        store.statuses.push({ messageId: params.MessageSid, status: params.MessageStatus, recipient: (params.To ?? "").replace(/^whatsapp:/, ""),
+                              timestamp: Math.floor(now() / 1000), errors: params.ErrorCode ? [{ code: Number(params.ErrorCode) }] : undefined });
+      } else if (params.MessageSid && deduper.firstTime(params.MessageSid)) {
+        const phone = (params.From ?? "").replace(/^whatsapp:\+?/, "");
+        const text = Number(params.NumMedia ?? 0) > 0 && !params.Body ? undefined : params.Body;
+        track(processInbound(phone, text, now(), params.ProfileName).catch((e) => log("processing error", e)));
+      }
+      res.writeHead(200, { "Content-Type": "text/xml" });
+      return void res.end("<Response></Response>"); // empty TwiML: replies go out via the Messages API
     }
 
     if (url.pathname.startsWith("/admin/")) {
