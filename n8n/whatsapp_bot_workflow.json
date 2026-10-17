@@ -1,0 +1,258 @@
+{
+  "name": "WhatsApp Cloud API bot (demo)",
+  "nodes": [
+    {
+      "id": "1",
+      "name": "Webhook GET (verify)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "2",
+      "name": "Check verify token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// n8n Code node: Meta webhook verification handshake (GET).\nconst q = $input.first().json.query || {};\nconst ok = q['hub.mode'] === 'subscribe' && q['hub.verify_token'] === $env.WHATSAPP_VERIFY_TOKEN;\nreturn [{ json: { ok, challenge: ok ? String(q['hub.challenge'] ?? '') : 'Forbidden' } }];\n"
+      }
+    },
+    {
+      "id": "3",
+      "name": "Respond challenge",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.challenge }}",
+        "options": {
+          "responseCode": "={{ $json.ok ? 200 : 403 }}"
+        }
+      }
+    },
+    {
+      "id": "4",
+      "name": "Webhook POST (messages)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        240
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      }
+    },
+    {
+      "id": "5",
+      "name": "Verify signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        240
+      ],
+      "parameters": {
+        "jsCode": "// n8n Code node: verify X-Hub-Signature-256 over the RAW body (Webhook option \"Raw Body\" must be on).\n// Requires NODE_FUNCTION_ALLOW_BUILTIN=crypto on the n8n instance.\nconst crypto = require('crypto');\nconst item = $input.first();\nconst headers = item.json.headers || {};\nconst raw = await this.helpers.getBinaryDataBuffer(0, 'data');\nconst expected = 'sha256=' + crypto.createHmac('sha256', $env.WHATSAPP_APP_SECRET).update(raw).digest('hex');\nconst received = String(headers['x-hub-signature-256'] || '');\nconst valid = received.length === expected.length &&\n  crypto.timingSafeEqual(Buffer.from(received), Buffer.from(expected));\nlet body = {};\nif (valid) { try { body = JSON.parse(raw.toString('utf8')); } catch (e) { return [{ json: { valid: false, status: 400 } }]; } }\nreturn [{ json: { valid, status: valid ? 200 : 401, body } }];\n"
+      }
+    },
+    {
+      "id": "6",
+      "name": "Acknowledge",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        440,
+        240
+      ],
+      "parameters": {
+        "respondWith": "noData",
+        "options": {
+          "responseCode": "={{ $json.status }}"
+        }
+      }
+    },
+    {
+      "id": "7",
+      "name": "Signature valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        660,
+        240
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "8",
+      "name": "Dedupe & route",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        220
+      ],
+      "parameters": {
+        "jsCode": "// n8n Code node: dedupe by message id, then route each inbound text to a reply.\n// Simplified keyword routing (the TypeScript service has the full retrieval + appointment logic).\nconst store = $getWorkflowStaticData('global');\nstore.seen = store.seen || {};\nstore.optedOut = store.optedOut || {};\nconst now = Date.now();\nfor (const [id, exp] of Object.entries(store.seen)) if (exp < now) delete store.seen[id];\n\nconst isHe = (t) => { const he = (t.match(/[\\u05D0-\\u05EA]/g) || []).length; const en = (t.match(/[A-Za-z]/g) || []).length; return (he || en) ? he * 2 >= en : true; };\nconst L = (he, en, h) => (h ? he : en);\nconst KB = [\n  { keys: ['hour', 'open', 'close', 'שעות', 'פתוחים', 'פתיחה'], he: 'אנחנו פתוחים בימים א׳–ה׳ 08:00–19:00 וביום ו׳ 08:00–13:00. בשבת המרפאה סגורה.', en: 'We are open Sunday–Thursday 08:00–19:00 and Friday 08:00–13:00. We are closed on Saturday.' },\n  { keys: ['address', 'where', 'parking', 'כתובת', 'איפה', 'חניה'], he: 'אנחנו ברחוב השלום 12, קומה 2 (כתובת לדוגמה). יש חניה בתשלום בבניין.', en: 'We are at 12 HaShalom Street, 2nd floor (demo address). There is paid parking in the building.' },\n  { keys: ['checkup', 'check-up', 'cleaning', 'בדיקה', 'ניקוי', 'אבנית'], he: 'בדיקה עולה 250 ש\"ח, ובדיקה עם ניקוי אבנית 400 ש\"ח (מחירים לדוגמה).', en: 'A check-up costs 250 ILS and a check-up with cleaning costs 400 ILS (demo prices).' },\n];\nconst INJECTION = /ignore (all |any )?(the )?(previous|prior|above) (instructions|rules)|system prompt|you are now|developer mode|jailbreak|התעלם\\S* מ|הוראות הקודמות/i;\n\nconst out = [];\nconst body = $input.first().json.body || {};\nfor (const entry of body.entry || []) for (const change of entry.changes || []) {\n  const value = change.value || {};\n  for (const msg of value.messages || []) {\n    if (store.seen[msg.id]) continue;            // webhook retry: already handled\n    store.seen[msg.id] = now + 24 * 3600 * 1000;\n    const from = msg.from;\n    const text = msg.type === 'text' ? String(msg.text.body || '') : '';\n    const he = isHe(text);\n    let reply;\n    if (/^\\s*(stop|unsubscribe|הסר|הסרה)\\s*$/i.test(text)) { store.optedOut[from] = true; reply = L('הוסרת. להצטרפות מחדש השיבו START.', 'You have been unsubscribed. Reply START to subscribe again.', he); }\n    else if (store.optedOut[from] && !/^\\s*start\\s*$/i.test(text)) continue;\n    else if (/^\\s*start\\s*$/i.test(text)) { delete store.optedOut[from]; reply = L('נרשמת מחדש.', 'You are subscribed again.', he); }\n    else if (!text) reply = L('אני יכול לקרוא רק הודעות טקסט.', 'I can only read text messages.', he);\n    else if (INJECTION.test(text)) reply = L('מצטער, אין באפשרותי לעשות זאת.', \"Sorry, I can't do that.\", he);\n    else if (/\\b(human|agent|representative)\\b|נציג/i.test(text)) reply = L('מעביר אותך לנציג מהצוות.', \"I'm passing you to a member of our team.\", he);\n    else {\n      const t = text.toLowerCase();\n      const hit = KB.find((k) => k.keys.some((w) => t.includes(w)));\n      reply = hit ? L(hit.he, hit.en, he) : L('אין לי מידע מאומת על כך. העברתי לצוות.', \"I don't have verified information about that. I've passed it to our team.\", he);\n    }\n    out.push({ json: { to: from, message_id: msg.id, reply } });\n  }\n}\nreturn out;\n"
+      }
+    },
+    {
+      "id": "9",
+      "name": "Send reply (Graph API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        220
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.GRAPH_BASE_URL || 'https://graph.facebook.com') + '/' + ($env.GRAPH_API_VERSION || 'v21.0') + '/' + $env.WHATSAPP_PHONE_NUMBER_ID + '/messages' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.WHATSAPP_ACCESS_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: $json.to, type: 'text', text: { body: $json.reply, preview_url: false } }) }}",
+        "options": {
+          "retry": {
+            "maxTries": 3
+          }
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook GET (verify)": {
+      "main": [
+        [
+          {
+            "node": "Check verify token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check verify token": {
+      "main": [
+        [
+          {
+            "node": "Respond challenge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook POST (messages)": {
+      "main": [
+        [
+          {
+            "node": "Verify signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify signature": {
+      "main": [
+        [
+          {
+            "node": "Acknowledge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acknowledge": {
+      "main": [
+        [
+          {
+            "node": "Signature valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Signature valid?": {
+      "main": [
+        [
+          {
+            "node": "Dedupe & route",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Dedupe & route": {
+      "main": [
+        [
+          {
+            "node": "Send reply (Graph API)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

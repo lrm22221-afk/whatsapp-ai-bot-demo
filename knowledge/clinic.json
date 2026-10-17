@@ -1,0 +1,113 @@
+{
+  "business": {
+    "name_en": "Ofek Dental Clinic (fictional)",
+    "name_he": "מרפאת השיניים אופק (פיקטיבית)"
+  },
+  "entries": [
+    {
+      "id": "hours",
+      "questions_en": [
+        "What are your opening hours?",
+        "When are you open?",
+        "What time do you open or close?",
+        "Are you open on Friday or Saturday?"
+      ],
+      "questions_he": [
+        "מה שעות הפתיחה?",
+        "מתי אתם פתוחים?",
+        "באיזו שעה אתם נפתחים או נסגרים?",
+        "אתם פתוחים בשישי או בשבת?"
+      ],
+      "a_en": "We are open Sunday–Thursday 08:00–19:00 and Friday 08:00–13:00. We are closed on Saturday.",
+      "a_he": "אנחנו פתוחים בימים א׳–ה׳ 08:00–19:00 וביום ו׳ 08:00–13:00. בשבת המרפאה סגורה."
+    },
+    {
+      "id": "address",
+      "questions_en": [
+        "Where are you located?",
+        "What is the clinic address?",
+        "Is there parking?",
+        "How do I get to the clinic?"
+      ],
+      "questions_he": [
+        "איפה אתם נמצאים?",
+        "מה הכתובת של המרפאה?",
+        "יש חניה?",
+        "איך מגיעים למרפאה?"
+      ],
+      "a_en": "We are at 12 HaShalom Street, 2nd floor (demo address). There is paid parking in the building.",
+      "a_he": "אנחנו ברחוב השלום 12, קומה 2 (כתובת לדוגמה). יש חניה בתשלום בבניין."
+    },
+    {
+      "id": "price_checkup",
+      "questions_en": [
+        "How much does a checkup cost?",
+        "What is the price of a dental check-up?",
+        "How much is a cleaning?"
+      ],
+      "questions_he": [
+        "כמה עולה בדיקה?",
+        "מה המחיר של בדיקת שיניים?",
+        "כמה עולה ניקוי אבנית?"
+      ],
+      "a_en": "A check-up costs 250 ILS and a check-up with cleaning costs 400 ILS (demo prices).",
+      "a_he": "בדיקה עולה 250 ש\"ח, ובדיקה עם ניקוי אבנית 400 ש\"ח (מחירים לדוגמה).",
+      "requires_any": [
+        "checkup",
+        "check-up",
+        "check",
+        "cleaning",
+        "בדיקה",
+        "בדיקת",
+        "ניקוי",
+        "אבנית"
+      ]
+    },
+    {
+      "id": "insurance",
+      "questions_en": [
+        "Do you accept insurance?",
+        "Do you work with Clalit or Maccabi?",
+        "Do you take my health fund dental plan?"
+      ],
+      "questions_he": [
+        "אתם עובדים עם ביטוח?",
+        "אתם עובדים עם כללית או מכבי?",
+        "יש לכם הסדר עם קופת חולים או ביטוח שיניים?"
+      ],
+      "a_en": "We work with the dental plans of Clalit and Maccabi (demo data). Please bring your membership card.",
+      "a_he": "אנחנו עובדים עם ביטוחי השיניים של כללית ומכבי (נתוני דוגמה). יש להביא כרטיס חבר."
+    },
+    {
+      "id": "emergency",
+      "questions_en": [
+        "I have a toothache, can I come today?",
+        "Severe tooth pain emergency",
+        "My tooth hurts a lot"
+      ],
+      "questions_he": [
+        "יש לי כאב שיניים, אפשר להגיע היום?",
+        "כאב שיניים חזק, מקרה חירום",
+        "כואבת לי השן מאוד"
+      ],
+      "a_en": "For urgent pain we keep same-day emergency slots. Write \"appointment\" to request one, or ask for a human to talk to our team.",
+      "a_he": "לכאבים דחופים יש לנו תורי חירום באותו יום. כתבו \"תור\" כדי לבקש תור, או בקשו נציג כדי לדבר עם הצוות."
+    },
+    {
+      "id": "cancel_policy",
+      "questions_en": [
+        "How do I cancel an appointment?",
+        "Can I reschedule my appointment?",
+        "What is your cancellation policy?"
+      ],
+      "questions_he": [
+        "איך מבטלים תור?",
+        "אפשר להזיז את התור?",
+        "מה מדיניות הביטולים?"
+      ],
+      "a_en": "Please cancel or reschedule at least 24 hours in advance by replying here or calling the clinic.",
+      "a_he": "יש לבטל או להזיז תור לפחות 24 שעות מראש, בתשובה כאן או בטלפון למרפאה."
+    }
+  ],
+  "_note": "Fictional demo data. 'requires_any': the entry is only eligible when the question mentions one of these terms, so a price for one service is never returned for a different service."
+}
